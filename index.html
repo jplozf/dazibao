@@ -1,0 +1,90 @@
+ <!DOCTYPE html>
+ <html lang="en">
+ <head>
+     <meta charset="UTF-8">
+     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+     <title>Dazibao</title>
+     <style>
+         body {
+             font-family: sans-serif;
+             background-color: #f0f0f0;
+         }
+         .container {
+             max-width: 800px;
+             margin: 0 auto;
+             padding: 20px;
+         }
+         .command {
+             background-color: #fff;
+             border-radius: 5px;
+             padding: 20px;
+             margin-bottom: 20px;
+             box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+         }
+         h2 {
+             margin-top: 0;
+         }
+         pre {
+             white-space: pre-wrap;
+             word-wrap: break-word;
+             background-color: #eee;
+             padding: 10px;
+             border-radius: 3px;
+         }
+     </style>
+ </head>
+ <body>
+     <div class="container">
+         <p id="last-updated-text"></p><span id="version-text" style="font-size: 0.8em; margin-left: 10px;"></span>
+         <div id="commands-container">
+             <!-- Commands will be loaded here -->
+         </div>
+     </div>
+ 
+     <script>
+         const commandsContainer = document.getElementById('commands-container');
+         const lastUpdatedText = document.getElementById('last-updated-text');
+         const versionText = document.getElementById('version-text');
+ 
+         async function fetchData() {
+             try {
+                 const response = await fetch('/data');
+                 const configData = await response.json(); // Now fetching the whole config
+                 const commands = configData.commands;
+                 const lastUpdated = new Date(configData.last_updated).toLocaleString();
+                 const version = configData.version;
+ 
+                 lastUpdatedText.textContent = `Last updated at ${lastUpdated}`;
+                 versionText.textContent = `Dazibao - Version: ${version}`;
+ 
+                 commandsContainer.innerHTML = ''; // Clear existing content
+ 
+                 commands.forEach(command => {
+                     const commandDiv = document.createElement('div');
+                     commandDiv.classList.add('command');
+ 
+                     const title = document.createElement('h2');
+                     title.textContent = command.name;
+                     commandDiv.appendChild(title);
+ 
+                     const pre = document.createElement('pre');
+                     pre.textContent = command.output;
+                     commandDiv.appendChild(pre);
+ 
+                     console.log(`Command: ${command.name}, Output Length: ${command.output.length}`);
+ 
+                     commandsContainer.appendChild(commandDiv);
+                 });
+             } catch (error) {
+                 console.error('Error fetching data:', error);
+             }
+         }
+ 
+         // Fetch data every 2 seconds
+         setInterval(fetchData, 2000);
+ 
+         // Initial fetch
+          fetchData();
+       </script>
+   </body>
+</html>

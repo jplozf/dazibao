@@ -41,12 +41,15 @@ var (
 	config   Config
 	mutex    = &sync.Mutex{}
 	lockFile *os.File // Global variable to hold the lock file
+	version  string   // This will be set by ldflags during build
 )
 
 // ****************************************************************************
 // CONSTS
 // ****************************************************************************
 const internalVersion = 0 // Internal version number
+const majorVersion = "0"
+const appName = "Dazibao"
 
 // ****************************************************************************
 // acquireLock()
@@ -113,25 +116,8 @@ func main() {
 	// Load configuration
 	loadConfig()
 
-	// Get Git commit count and hash
-	commitCountBytes, err := exec.Command("git", "rev-list", "--count", "HEAD").Output()
-	if err != nil {
-		log.Printf("Warning: Could not get Git commit count: %v", err)
-		config.Version = fmt.Sprintf("%d.0-unknown", internalVersion)
-	} else {
-		commitCount := "0"
-		fmt.Sscanf(string(commitCountBytes), "%s", &commitCount)
-
-		commitHashBytes, err := exec.Command("git", "rev-parse", "--short", "HEAD").Output()
-		if err != nil {
-			log.Printf("Warning: Could not get Git commit hash: %v", err)
-			config.Version = fmt.Sprintf("%d.%s-unknown", internalVersion, commitCount)
-		} else {
-			commitHash := "unknown"
-			fmt.Sscanf(string(commitHashBytes), "%s", &commitHash)
-			config.Version = fmt.Sprintf("%d.%s-%s", internalVersion, commitCount, commitHash)
-		}
-	}
+	// Get version set upon compilation
+	config.Version = version
 
 	// Ensure ~/.dazibao directory exists
 	homeDir, err := os.UserHomeDir()

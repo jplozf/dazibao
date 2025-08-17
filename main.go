@@ -18,6 +18,7 @@ import (
 	"os/signal"
 	"os/user"
 	"path/filepath"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -481,7 +482,7 @@ func executeCommandOrVariable(cmdStr string) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		return string(out), nil
+		return strings.TrimSpace(string(out)), nil
 	}
 }
 

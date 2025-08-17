@@ -99,7 +99,6 @@ func acquireLock() {
 	dazibaoDir := filepath.Join(homeDir, ".dazibao")
 	lockFilePath := filepath.Join(dazibaoDir, "dazibao.lock")
 
-	// Create ~/.dazibao directory if it doesn't exist
 	if _, err := os.Stat(dazibaoDir); os.IsNotExist(err) {
 		err = os.MkdirAll(dazibaoDir, 0755)
 		if err != nil {
@@ -107,7 +106,6 @@ func acquireLock() {
 		}
 	}
 
-	// Try to create and lock the file
 	lockFile, err = os.OpenFile(lockFilePath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0644)
 	if err != nil {
 		if os.IsExist(err) {
@@ -117,12 +115,10 @@ func acquireLock() {
 		}
 	}
 
-	// Write PID to lock file
 	_, err = lockFile.WriteString(fmt.Sprintf("%d", os.Getpid()))
 	if err != nil {
 		log.Fatalf("Failed to write PID to lock file: %v", err)
 	}
-
 	log.Printf("Acquired lock: %s (PID: %d)", lockFilePath, os.Getpid())
 }
 
@@ -152,7 +148,6 @@ func ensureAssets() {
 	}
 	dazibaoDir := filepath.Join(homeDir, ".dazibao")
 
-	// Create ~/.dazibao directory if it doesn't exist
 	if _, err := os.Stat(dazibaoDir); os.IsNotExist(err) {
 		err = os.MkdirAll(dazibaoDir, 0755)
 		if err != nil {
@@ -160,22 +155,20 @@ func ensureAssets() {
 		}
 	}
 
-	// Create ~/.dazibao/index.html if it doesn't exist
-	indexPath := filepath.Join(dazibaoDir, "index.html")
-	if _, err := os.Stat(indexPath); os.IsNotExist(err) {
-		log.Println("~/.dazibao/index.html not found, copying from project root.")
-		srcPath := "index.html" // Path to index.html in the project root
+	templatePath := filepath.Join(dazibaoDir, "template.html")
+	if _, err := os.Stat(templatePath); os.IsNotExist(err) {
+		log.Println("~/.dazibao/template.html not found, copying from project root.")
+		srcPath := "template.html"
 		srcFile, err := os.ReadFile(srcPath)
 		if err != nil {
-			log.Fatalf("Failed to read source index.html from %s: %v", srcPath, err)
+			log.Fatalf("Failed to read source template.html from %s: %v", srcPath, err)
 		}
-		err = os.WriteFile(indexPath, srcFile, 0644)
+		err = os.WriteFile(templatePath, srcFile, 0644)
 		if err != nil {
-			log.Fatalf("Failed to write index.html to %s: %v", indexPath, err)
+			log.Fatalf("Failed to write template.html to %s: %v", templatePath, err)
 		}
 	}
 
-	// Copy icons directory to ~/.dazibao if it doesn't exist
 	iconsSrcDir := "icons"
 	iconsDestDir := filepath.Join(dazibaoDir, "icons")
 	if _, err := os.Stat(iconsDestDir); os.IsNotExist(err) {
@@ -191,28 +184,63 @@ func ensureAssets() {
 // main()
 // ****************************************************************************
 func main() {
-	// Define a 'dry-run' flag
 	dryRun := flag.Bool("d", false, "Dry run: generate static HTML and exit")
+	interval := flag.Int("t", 0, "Interval in seconds for static page generation")
+	outputPath := flag.String("o", "", "Optional: Path to write the generated HTML file")
 	flag.Parse()
 
-	// Load configuration
-	loadConfig()
-	config.Version = version
-
-	// Ensure assets are in place before doing anything else
 	ensureAssets()
 
 	if *dryRun {
-		// Execute dry run logic
-		executeDryRun()
+		htmlContent, err := generateAndUpdateStaticHTML()
+		if err != nil {
+			log.Fatalf("Failed to generate HTML for dry run: %v", err)
+		}
+		if *outputPath != "" {
+			err := writeHTMLToFile(htmlContent, *outputPath)
+			if err != nil {
+				log.Fatalf("Failed to write HTML to file: %v", err)
+			}
+			log.Printf("Successfully wrote static page to %s", *outputPath)
+		} else {
+			fmt.Println(htmlContent)
+		}
 		os.Exit(0)
 	}
 
-	// Acquire application lock
+	if *interval > 0 {
+		executeIntervalGeneration(*interval, *outputPath)
+		os.Exit(0)
+	}
+
+	startServer()
+}
+
+// ****************************************************************************
+// writeHTMLToFile()
+// ****************************************************************************
+func writeHTMLToFile(content, path string) error {
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return fmt.Errorf("could not determine absolute path for %s: %w", path, err)
+	}
+	dir := filepath.Dir(absPath)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("could not create directory %s: %w", dir, err)
+	}
+	return os.WriteFile(absPath, []byte(content), 0644)
+}
+
+// ****************************************************************************
+// startServer()
+// ****************************************************************************
+func startServer() {
+	loadConfig()
+	config.Version = version
+
 	acquireLock()
 	defer releaseLock()
 
-	// Set up signal handling
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM)
 	go func() {
@@ -222,12 +250,10 @@ func main() {
 		os.Exit(0)
 	}()
 
-	// Start block runners
 	for _, block := range config.Blocks {
 		go runBlock(block)
 	}
 
-	// Serve static files from ~/.dazibao
 	homeDir, _ := os.UserHomeDir()
 	dazibaoDir := filepath.Join(homeDir, ".dazibao")
 	http.Handle("/", http.FileServer(http.Dir(dazibaoDir)))
@@ -238,13 +264,63 @@ func main() {
 }
 
 // ****************************************************************************
-// executeDryRun()
+// executeIntervalGeneration()
 // ****************************************************************************
-func executeDryRun() {
-	log.Println("Executing dry run...")
+func executeIntervalGeneration(interval int, outputPath string) {
+	ticker := time.NewTicker(time.Duration(interval) * time.Second)
+	defer ticker.Stop()
+	signals := make(chan os.Signal, 1)
+	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM)
 
-	// 1. Execute all commands once
-	for _, block := range config.Blocks {
+	log.Printf("Starting static page generation every %d seconds. Press Ctrl+C to stop.", interval)
+
+	runGeneration := func() {
+		log.Println("Generating static page...")
+		htmlContent, err := generateAndUpdateStaticHTML()
+		if err != nil {
+			log.Printf("Error generating static page: %v", err)
+			return
+		}
+
+		finalPath := outputPath
+		if finalPath == "" {
+			homeDir, _ := os.UserHomeDir()
+			finalPath = filepath.Join(homeDir, ".dazibao", "index.html")
+		}
+
+		err = writeHTMLToFile(htmlContent, finalPath)
+		if err != nil {
+			log.Printf("Error writing to %s: %v", finalPath, err)
+		} else {
+			absPath, _ := filepath.Abs(finalPath)
+			log.Printf("Successfully updated %s", absPath)
+		}
+	}
+
+	runGeneration() // Run once immediately
+
+	for {
+		select {
+		case <-ticker.C:
+			runGeneration()
+		case <-signals:
+			log.Println("Received termination signal. Exiting...")
+			return
+		}
+	}
+}
+
+// ****************************************************************************
+// generateAndUpdateStaticHTML()
+// ****************************************************************************
+func generateAndUpdateStaticHTML() (string, error) {
+	cfg, err := getFreshConfig()
+	if err != nil {
+		return "", fmt.Errorf("could not load config: %w", err)
+	}
+	cfg.Version = version
+
+	for _, block := range cfg.Blocks {
 		switch block.Type {
 		case "single":
 			output, err := executeCommandOrVariable(block.Command)
@@ -265,36 +341,37 @@ func executeDryRun() {
 		}
 		block.LastUpdated = time.Now()
 	}
-	config.LastUpdated = time.Now()
+	cfg.LastUpdated = time.Now()
 
-	// 2. Load and parse the HTML template
+	err = saveConfigToFile(cfg)
+	if err != nil {
+		return "", fmt.Errorf("could not save updated config: %w", err)
+	}
+
 	homeDir, _ := os.UserHomeDir()
 	dazibaoDir := filepath.Join(homeDir, ".dazibao")
-	templatePath := filepath.Join(dazibaoDir, "index.html")
+	templatePath := filepath.Join(dazibaoDir, "template.html")
 	tmpl, err := template.ParseFiles(templatePath)
 	if err != nil {
-		log.Fatalf("Failed to parse template file %s: %v", templatePath, err)
+		return "", fmt.Errorf("failed to parse template file %s: %w", templatePath, err)
 	}
 
-	// 3. Marshal the config to JSON
-	configJSON, err := json.Marshal(config)
+	configJSON, err := json.Marshal(cfg)
 	if err != nil {
-		log.Fatalf("Failed to marshal config to JSON: %v", err)
+		return "", fmt.Errorf("failed to marshal config to JSON: %w", err)
 	}
 
-	// 4. Read and encode the icon
 	iconPath := filepath.Join(dazibaoDir, "icons", "dazibao.png")
 	iconData, err := os.ReadFile(iconPath)
 	var iconDataURI string
 	if err != nil {
-		log.Printf("Warning: could not read icon file for dry run: %v", err)
-		iconDataURI = "" // Will use fallback in template
+		log.Printf("Warning: could not read icon file: %v", err)
+		iconDataURI = ""
 	} else {
 		encodedIcon := base64.StdEncoding.EncodeToString(iconData)
 		iconDataURI = "data:image/png;base64," + encodedIcon
 	}
 
-	// 5. Create a data structure for the template
 	templateData := struct {
 		ConfigJSON  template.JS
 		IconDataURI template.URL
@@ -303,138 +380,135 @@ func executeDryRun() {
 		IconDataURI: template.URL(iconDataURI),
 	}
 
-	// 6. Execute the template and write to a buffer
 	var renderedHTML bytes.Buffer
 	err = tmpl.Execute(&renderedHTML, templateData)
 	if err != nil {
-		log.Fatalf("Failed to execute template: %v", err)
+		return "", fmt.Errorf("failed to execute template: %w", err)
 	}
 
-	// 7. Print the final HTML to stdout
-	fmt.Println(renderedHTML.String())
+	return renderedHTML.String(), nil
+}
+
+// ****************************************************************************
+// getFreshConfig()
+// ****************************************************************************
+func getFreshConfig() (Config, error) {
+	var freshConfig Config
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return freshConfig, fmt.Errorf("failed to get user home directory: %w", err)
+	}
+	configFilePath := filepath.Join(homeDir, ".dazibao", "config.json")
+
+	file, err := os.ReadFile(configFilePath)
+	if err != nil {
+		return freshConfig, fmt.Errorf("failed to read config file: %w", err)
+	}
+
+	err = json.Unmarshal(file, &freshConfig)
+	if err != nil {
+		return freshConfig, fmt.Errorf("failed to unmarshal config: %w", err)
+	}
+
+	if freshConfig.Port == 0 {
+		freshConfig.Port = 8080
+	}
+	return freshConfig, nil
+}
+
+// ****************************************************************************
+// createDefaultConfig()
+// ****************************************************************************
+func createDefaultConfig() Config {
+	return Config{
+		Blocks: []*Block{
+			{
+				Type:     "single",
+				Title:    "Uptime",
+				Command:  "uptime",
+				Interval: 5,
+				Colors:   BlockColors{Background: "#fff", TitleColor: "#333", TitleBackground: "#eee"},
+			},
+			{
+				Type:     "single",
+				Title:    "Disk Usage",
+				Command:  "df -h",
+				Interval: 10,
+				Colors:   BlockColors{Background: "#fff", TitleColor: "#333", TitleBackground: "#eee"},
+			},
+			{
+				Type:  "group",
+				Title: "System Info",
+				Commands: []Command{
+					{Label: "Hostname", Command: "%hostname"},
+					{Label: "Current Time", Command: "%time"},
+					{Label: "Current Date", Command: "%date"},
+					{Label: "Username", Command: "%username"},
+					{Label: "IP Address", Command: "%ip_address"},
+				},
+				Interval: 5,
+				Colors:   BlockColors{Background: "#f9f9f9", TitleColor: "#0056b3", TitleBackground: "#e0f2f7", LabelColor: "#555", LabelBackground: "#f0f0f0", ValueColor: "#222", ValueBackground: "#fff"},
+			},
+		},
+		LastUpdated: time.Now(),
+		Port:        8080,
+		Colors:      GlobalColors{PageBackground: "#f0f0f0"},
+	}
 }
 
 // ****************************************************************************
 // loadConfig()
 // ****************************************************************************
 func loadConfig() {
-	homeDir, err := os.UserHomeDir()
+	cfg, err := getFreshConfig()
 	if err != nil {
-		log.Fatalf("Failed to get user home directory: %v", err)
-	}
-
-	dazibaoDir := filepath.Join(homeDir, ".dazibao")
-	configFilePath := filepath.Join(dazibaoDir, "config.json")
-
-	// Create ~/.dazibao directory if it doesn't exist
-	if _, err := os.Stat(dazibaoDir); os.IsNotExist(err) {
-		err = os.MkdirAll(dazibaoDir, 0755)
-		if err != nil {
-			log.Fatalf("Failed to create ~/.dazibao directory: %v", err)
-		}
-	}
-
-	file, err := os.ReadFile(configFilePath)
-	if err != nil {
-		if os.IsNotExist(err) {
+		if os.IsNotExist(err) || strings.Contains(err.Error(), "no such file or directory") {
 			log.Println("~/.dazibao/config.json not found, creating with default blocks.")
-			config = Config{
-				Blocks: []*Block{
-					{
-						Type:     "single",
-						Title:    "Uptime",
-						Command:  "uptime",
-						Interval: 5,
-						Colors: BlockColors{
-							Background:      "#fff",
-							TitleColor:      "#333",
-							TitleBackground: "#eee",
-						},
-					},
-					{
-						Type:     "single",
-						Title:    "Disk Usage",
-						Command:  "df -h",
-						Interval: 10,
-						Colors: BlockColors{
-							Background:      "#fff",
-							TitleColor:      "#333",
-							TitleBackground: "#eee",
-						},
-					},
-					{
-						Type:  "group",
-						Title: "System Info",
-						Commands: []Command{
-							{Label: "Hostname", Command: "%hostname"},
-							{Label: "Current Time", Command: "%time"},
-							{Label: "Current Date", Command: "%date"},
-							{Label: "Username", Command: "%username"},
-							{Label: "IP Address", Command: "%ip_address"},
-						},
-						Interval: 5,
-						Colors: BlockColors{
-							Background:      "#f9f9f9",
-							TitleColor:      "#0056b3",
-							TitleBackground: "#e0f2f7",
-							LabelColor:      "#555",
-							LabelBackground: "#f0f0f0",
-							ValueColor:      "#222",
-							ValueBackground: "#fff",
-						},
-					},
-				},
-				LastUpdated: time.Now(),
-				Port:        8080, // Default port
-				Colors: GlobalColors{
-					PageBackground: "#f0f0f0",
-				},
+			config = createDefaultConfig()
+			err = saveConfigToFile(config)
+			if err != nil {
+				log.Fatalf("Failed to save initial default config: %v", err)
 			}
-			saveConfig() // Save the newly created default config
 			return
 		}
-		log.Fatalf("Failed to read config file: %v", err)
+		homeDir, _ := os.UserHomeDir()
+		configFilePath := filepath.Join(homeDir, ".dazibao", "config.json")
+		log.Fatalf("Failed to load config file %s: %v", configFilePath, err)
 	}
+	config = cfg
+}
 
-	err = json.Unmarshal(file, &config)
+// ****************************************************************************
+// saveConfigToFile()
+// ****************************************************************************
+func saveConfigToFile(cfg Config) error {
+	mutex.Lock()
+	defer mutex.Unlock()
+
+	homeDir, err := os.UserHomeDir()
 	if err != nil {
-		log.Fatalf("Failed to unmarshal config: %v", err)
+		return fmt.Errorf("error getting user home directory: %w", err)
+	}
+	configFilePath := filepath.Join(homeDir, ".dazibao", "config.json")
+
+	data, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		return fmt.Errorf("error marshalling config: %w", err)
 	}
 
-	// If port is 0 after unmarshaling (e.g., not in config file), set default
-	if config.Port == 0 {
-		config.Port = 8080
+	err = os.WriteFile(configFilePath, data, 0644)
+	if err != nil {
+		return fmt.Errorf("error writing config file %s: %w", configFilePath, err)
 	}
+	return nil
 }
 
 // ****************************************************************************
 // saveConfig()
 // ****************************************************************************
 func saveConfig() {
-	mutex.Lock()
-	defer mutex.Unlock()
-
-	config.LastUpdated = time.Now() // Update timestamp before saving
-
-	// log.Println("Attempting to save config...") // Removed frequent log
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		log.Printf("Error getting user home directory for saving config: %v", err)
-		return
-	}
-	configFilePath := filepath.Join(homeDir, ".dazibao", "config.json")
-
-	data, err := json.MarshalIndent(config, "", "  ")
-	if err != nil {
-		log.Printf("Error marshalling config: %v", err)
-		return
-	}
-
-	err = os.WriteFile(configFilePath, data, 0644)
-	if err != nil {
-		log.Printf("Error writing config file %s: %v", configFilePath, err)
-	} else {
-		// log.Printf("Config saved successfully to %s", configFilePath) // Removed frequent log
+	if err := saveConfigToFile(config); err != nil {
+		log.Printf("Error saving config: %v", err)
 	}
 }
 
@@ -522,7 +596,6 @@ func resolveVariable(variable string) string {
 		}
 		return user.Username
 	case "%ip_address":
-		// This is a simplified way to get an IP address, might not be robust for all cases
 		addrs, err := net.InterfaceAddrs()
 		if err != nil {
 			return fmt.Sprintf("Error: %v", err)
@@ -610,7 +683,6 @@ func iconHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	iconPath := filepath.Join(homeDir, ".dazibao", "icons", "dazibao.png")
 
-	// Check if the icon file exists
 	if _, err := os.Stat(iconPath); os.IsNotExist(err) {
 		http.Error(w, "Icon not found", http.StatusNotFound)
 		log.Printf("Icon file not found: %s", iconPath)
@@ -627,7 +699,6 @@ func dataHandler(w http.ResponseWriter, r *http.Request) {
 	mutex.Lock()
 	defer mutex.Unlock()
 
-	// log.Printf("Serving full config: %+v", config) // Removed frequent log
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(config)
 }

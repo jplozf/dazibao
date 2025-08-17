@@ -7,15 +7,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"os"
-	"net"
 	"os/exec"
-	"os/user"
 	"os/signal"
-	"syscall"
+	"os/user"
 	"path/filepath"
 	"sync"
+	"syscall"
 	"time"
 )
 
@@ -47,23 +47,23 @@ type Command struct {
 
 // Block represents a display block, which can be a single command or a group.
 type Block struct {
-	Type        string        `json:"type"` // "single" or "group"
-	Title       string        `json:"title"`
-	Command     string        `json:"command,omitempty"`   // For type "single"
-	Commands    []Command     `json:"commands,omitempty"`  // For type "group"
-	Interval    int           `json:"interval"`
-	Output      string        `json:"output,omitempty"`    // For type "single"
-	LastUpdated time.Time     `json:"last_updated"`
-	Colors      BlockColors   `json:"colors,omitempty"`
+	Type        string      `json:"type"` // "single" or "group"
+	Title       string      `json:"title"`
+	Command     string      `json:"command,omitempty"`  // For type "single"
+	Commands    []Command   `json:"commands,omitempty"` // For type "group"
+	Interval    int         `json:"interval"`
+	Output      string      `json:"output,omitempty"` // For type "single"
+	LastUpdated time.Time   `json:"last_updated"`
+	Colors      BlockColors `json:"colors,omitempty"`
 }
 
 // Config represents the application configuration.
 type Config struct {
-	Blocks      []*Block      `json:"blocks"`
-	LastUpdated time.Time     `json:"last_updated"`
-	Port        int           `json:"port"`
-	Version     string        `json:"version"`
-	Colors      GlobalColors  `json:"colors,omitempty"`
+	Blocks      []*Block     `json:"blocks"`
+	LastUpdated time.Time    `json:"last_updated"`
+	Port        int          `json:"port"`
+	Version     string       `json:"version"`
+	Colors      GlobalColors `json:"colors,omitempty"`
 }
 
 // ****************************************************************************
@@ -242,9 +242,9 @@ func loadConfig() {
 			config = Config{
 				Blocks: []*Block{
 					{
-						Type:    "single",
-						Title:   "Uptime",
-						Command: "uptime",
+						Type:     "single",
+						Title:    "Uptime",
+						Command:  "uptime",
 						Interval: 5,
 						Colors: BlockColors{
 							Background:      "#fff",
@@ -253,9 +253,9 @@ func loadConfig() {
 						},
 					},
 					{
-						Type:    "single",
-						Title:   "Disk Usage",
-						Command: "df -h",
+						Type:     "single",
+						Title:    "Disk Usage",
+						Command:  "df -h",
 						Interval: 10,
 						Colors: BlockColors{
 							Background:      "#fff",
@@ -264,8 +264,8 @@ func loadConfig() {
 						},
 					},
 					{
-						Type:    "group",
-						Title:   "System Info",
+						Type:  "group",
+						Title: "System Info",
 						Commands: []Command{
 							{Label: "Hostname", Command: "%hostname"},
 							{Label: "Current Time", Command: "%time"},
@@ -436,6 +436,10 @@ func resolveVariable(variable string) string {
 			}
 		}
 		return "N/A"
+	case "%app_name":
+		return appName
+	case "%app_version":
+		return version
 	default:
 		return "Unknown variable"
 	}

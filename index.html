@@ -85,7 +85,7 @@
     </head>
     <body>
         <div class="header">
-            <img id="app-icon" src="/icons/dazibao.png" alt="Dazibao Icon">
+            <img id="app-icon" src="{{if .IconDataURI}}{{.IconDataURI}}{{else}}/icons/dazibao.png{{end}}" alt="Dazibao Icon">
             <div class="header-text-wrapper">
                 <p id="version-text"></p>
                 <span id="last-updated-text" style="font-size: 0.8em;"></span>
@@ -104,12 +104,13 @@
             const body = document.body;
             const header = document.querySelector('.header');
 
-            async function fetchData() {
+            function renderData(configData) {
+                if (!configData || !configData.blocks) {
+                    console.error('Invalid or empty config data received.');
+                    return;
+                }
                 try {
-                    const response = await fetch('/data');
-                    const configData = await response.json();
                     const blocks = configData.blocks;
-                    console.log('Fetched blocks:', blocks);
                     const lastUpdated = new Date(configData.last_updated).toLocaleString();
                     const version = configData.version;
                     const globalColors = configData.colors || {};
@@ -212,15 +213,31 @@
                         blocksContainer.appendChild(blockDiv);
                     });
                 } catch (error) {
-                    console.error('Error fetching data:', error);
+                    console.error('Error rendering data:', error);
                 }
             }
 
-            // Fetch data every 2 seconds
-            setInterval(fetchData, 2000);
+            // This variable will be replaced by the Go template in dry-run mode.
+            // It will be 'null' or 'undefined' when the server is running normally.
+            const staticConfigData = {{.ConfigJSON}};
 
-            // Initial fetch
-            fetchData();
+            if (staticConfigData) {
+                // Dry-run mode: render the static data
+                renderData(staticConfigData);
+            } else {
+                // Live mode: fetch data from the server
+                async function fetchData() {
+                    try {
+                        const response = await fetch('/data');
+                        const dynamicConfigData = await response.json();
+                        renderData(dynamicConfigData);
+                    } catch (error) {
+                        console.error('Error fetching data:', error);
+                    }
+                }
+                setInterval(fetchData, 2000);
+                fetchData();
+            }
         </script>
     </body>
 </html>

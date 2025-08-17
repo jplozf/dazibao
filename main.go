@@ -4,8 +4,12 @@ package main
 // IMPORTS
 // ****************************************************************************
 import (
+	"bytes"
+	"encoding/base64"
 	"encoding/json"
+	"flag"
 	"fmt"
+	"html/template"
 	"log"
 	"net"
 	"net/http"
@@ -138,30 +142,9 @@ func releaseLock() {
 }
 
 // ****************************************************************************
-// main()
+// ensureAssets()
 // ****************************************************************************
-func main() {
-	// Acquire application lock
-	acquireLock()
-	defer releaseLock()
-
-	// Set up signal handling
-	signals := make(chan os.Signal, 1)
-	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM)
-	go func() {
-		<-signals
-		log.Println("Received termination signal. Releasing lock and exiting...")
-		releaseLock()
-		os.Exit(0)
-	}()
-
-	// Load configuration
-	loadConfig()
-
-	// Get version set upon compilation
-	config.Version = version
-
-	// Ensure ~/.dazibao directory exists
+func ensureAssets() {
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		log.Fatalf("Failed to get user home directory: %v", err)
@@ -201,6 +184,42 @@ func main() {
 			log.Fatalf("Failed to copy icons directory: %v", err)
 		}
 	}
+}
+
+// ****************************************************************************
+// main()
+// ****************************************************************************
+func main() {
+	// Define a 'dry-run' flag
+	dryRun := flag.Bool("d", false, "Dry run: generate static HTML and exit")
+	flag.Parse()
+
+	// Load configuration
+	loadConfig()
+	config.Version = version
+
+	// Ensure assets are in place before doing anything else
+	ensureAssets()
+
+	if *dryRun {
+		// Execute dry run logic
+		executeDryRun()
+		os.Exit(0)
+	}
+
+	// Acquire application lock
+	acquireLock()
+	defer releaseLock()
+
+	// Set up signal handling
+	signals := make(chan os.Signal, 1)
+	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		<-signals
+		log.Println("Received termination signal. Releasing lock and exiting...")
+		releaseLock()
+		os.Exit(0)
+	}()
 
 	// Start block runners
 	for _, block := range config.Blocks {
@@ -208,11 +227,90 @@ func main() {
 	}
 
 	// Serve static files from ~/.dazibao
+	homeDir, _ := os.UserHomeDir()
+	dazibaoDir := filepath.Join(homeDir, ".dazibao")
 	http.Handle("/", http.FileServer(http.Dir(dazibaoDir)))
 	http.HandleFunc("/data", dataHandler)
 	http.HandleFunc("/icons/dazibao.png", iconHandler)
 	log.Printf("dazibao server running on http://localhost:%d. To stop, run: kill %d", config.Port, os.Getpid())
 	log.Fatal(http.ListenAndServe(fmt.Sprintf(":%d", config.Port), nil))
+}
+
+// ****************************************************************************
+// executeDryRun()
+// ****************************************************************************
+func executeDryRun() {
+	log.Println("Executing dry run...")
+
+	// 1. Execute all commands once
+	for _, block := range config.Blocks {
+		switch block.Type {
+		case "single":
+			output, err := executeCommandOrVariable(block.Command)
+			if err != nil {
+				block.Output = fmt.Sprintf("Error: %v", err)
+			} else {
+				block.Output = output
+			}
+		case "group":
+			for i := range block.Commands {
+				output, err := executeCommandOrVariable(block.Commands[i].Command)
+				if err != nil {
+					block.Commands[i].Output = fmt.Sprintf("Error: %v", err)
+				} else {
+					block.Commands[i].Output = output
+				}
+			}
+		}
+		block.LastUpdated = time.Now()
+	}
+	config.LastUpdated = time.Now()
+
+	// 2. Load and parse the HTML template
+	homeDir, _ := os.UserHomeDir()
+	dazibaoDir := filepath.Join(homeDir, ".dazibao")
+	templatePath := filepath.Join(dazibaoDir, "index.html")
+	tmpl, err := template.ParseFiles(templatePath)
+	if err != nil {
+		log.Fatalf("Failed to parse template file %s: %v", templatePath, err)
+	}
+
+	// 3. Marshal the config to JSON
+	configJSON, err := json.Marshal(config)
+	if err != nil {
+		log.Fatalf("Failed to marshal config to JSON: %v", err)
+	}
+
+	// 4. Read and encode the icon
+	iconPath := filepath.Join(dazibaoDir, "icons", "dazibao.png")
+	iconData, err := os.ReadFile(iconPath)
+	var iconDataURI string
+	if err != nil {
+		log.Printf("Warning: could not read icon file for dry run: %v", err)
+		iconDataURI = "" // Will use fallback in template
+	} else {
+		encodedIcon := base64.StdEncoding.EncodeToString(iconData)
+		iconDataURI = "data:image/png;base64," + encodedIcon
+	}
+
+	// 5. Create a data structure for the template
+	templateData := struct {
+		ConfigJSON  template.JS
+		IconDataURI template.URL
+	}{
+		ConfigJSON:  template.JS(configJSON),
+		IconDataURI: template.URL(iconDataURI),
+	}
+
+	// 6. Execute the template and write to a buffer
+	var renderedHTML bytes.Buffer
+	err = tmpl.Execute(&renderedHTML, templateData)
+	if err != nil {
+		log.Fatalf("Failed to execute template: %v", err)
+	}
+
+	// 7. Print the final HTML to stdout
+	fmt.Println(renderedHTML.String())
 }
 
 // ****************************************************************************

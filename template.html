@@ -153,9 +153,11 @@
                         blockDiv.appendChild(title);
 
                         if (block.type === 'single') {
+                            console.log('Single block colors object:', block.colors);
                             const pre = document.createElement('pre');
                             pre.classList.add('single-command-output');
                             pre.textContent = block.output;
+                            console.log('Single block output:', block.output);
                             // Apply default background for single command output if not specified
                             if (!block.colors || !block.colors.value_background) {
                                 pre.style.backgroundColor = '#eee';
@@ -165,6 +167,10 @@
                             if (block.colors && block.colors.value_color) {
                                 pre.style.color = block.colors.value_color;
                             }
+                            if (block.colors && block.colors.value_font_size) {
+                                pre.style.fontSize = block.colors.value_font_size;
+                            }
+                            console.log('Single block value_font_size:', block.colors.value_font_size);
                             blockDiv.appendChild(pre);
                         } else if (block.type === 'group') {
                             block.commands.forEach(command => {
@@ -201,6 +207,9 @@
                                         valueSpan.style.backgroundColor = block.colors.value_background;
                                     } else {
                                         valueSpan.style.backgroundColor = '#fff'; // Default value background
+                                    }
+                                    if (block.colors.value_font_size) {
+                                        valueSpan.style.fontSize = block.colors.value_font_size;
                                     }
                                 } else {
                                     valueSpan.style.backgroundColor = '#fff'; // Default value background

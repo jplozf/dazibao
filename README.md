@@ -12,7 +12,7 @@ Dazibao is a lightweight, Conky-like system monitoring tool that serves system i
     -   **Server Mode:** Runs as a persistent web server that refreshes the page automatically.
     -   **Static Generation Mode:** Generates a single, self-contained HTML file.
     -   **Interval Generation Mode:** Periodically regenerates the static HTML file at a custom interval.
--   **Customizable Theming:** Control the background and text colors for the page, titles, labels, and values.
+-   **Customizable Theming:** Control the background and text colors for the page, titles, labels, and values, and now also **font sizes** for these elements.
 -   **Built-in Variables:** Use special variables like `%hostname`, `%time`, `%date`, and more for common system information without running external commands.
 
 ## Installation
@@ -34,6 +34,14 @@ Dazibao is configured through the `~/.dazibao/config.json` file. You can customi
 -   **`single`:** Displays the output of a single command.
 -   **`group`:** Displays the output of multiple commands, each with its own label.
 
+### Font Size Customization
+
+You can specify font sizes for different elements within a block using the following optional properties in the `colors` object:
+
+-   `"title_font_size"`: Sets the font size for the block title (e.g., `"1.5em"`, `"24px"`).
+-   `"label_font_size"`: Sets the font size for labels in group blocks (e.g., `"1em"`, `"16px"`).
+-   `"value_font_size"`: Sets the font size for command outputs/values in both single and group blocks (e.g., `"1.2em"`, `"18px"`).
+
 ### Example `config.json`
 
 ```json
@@ -47,7 +55,8 @@ Dazibao is configured through the `~/.dazibao/config.json` file. You can customi
       "colors": {
         "background": "#fff",
         "title_color": "#333",
-        "title_background": "#eee"
+        "title_background": "#eee",
+        "value_font_size": "1.5em"
       }
     },
     {
@@ -61,7 +70,9 @@ Dazibao is configured through the `~/.dazibao/config.json` file. You can customi
       "interval": 5,
       "colors": {
         "background": "#f9f9f9",
-        "label_background": "#f0f0f0"
+        "label_background": "#f0f0f0",
+        "label_font_size": "1.1em",
+        "value_font_size": "1em"
       }
     }
   ],

@@ -32,10 +32,13 @@ type BlockColors struct {
 	Background      string `json:"background,omitempty"`
 	TitleColor      string `json:"title_color,omitempty"`
 	TitleBackground string `json:"title_background,omitempty"`
+	TitleFontSize   string `json:"title_font_size,omitempty"`
 	LabelColor      string `json:"label_color,omitempty"`
 	LabelBackground string `json:"label_background,omitempty"`
+	LabelFontSize   string `json:"label_font_size,omitempty"`
 	ValueColor      string `json:"value_color,omitempty"`
 	ValueBackground string `json:"value_background,omitempty"`
+	ValueFontSize   string `json:"value_font_size,omitempty"`
 }
 
 // GlobalColors defines global color settings.
@@ -156,17 +159,15 @@ func ensureAssets() {
 	}
 
 	templatePath := filepath.Join(dazibaoDir, "template.html")
-	if _, err := os.Stat(templatePath); os.IsNotExist(err) {
-		log.Println("~/.dazibao/template.html not found, copying from project root.")
-		srcPath := "template.html"
-		srcFile, err := os.ReadFile(srcPath)
-		if err != nil {
-			log.Fatalf("Failed to read source template.html from %s: %v", srcPath, err)
-		}
-		err = os.WriteFile(templatePath, srcFile, 0644)
-		if err != nil {
-			log.Fatalf("Failed to write template.html to %s: %v", templatePath, err)
-		}
+	log.Println("Copying template.html from project root to ~/.dazibao/template.html.")
+	srcPath := "template.html"
+	srcFile, err := os.ReadFile(srcPath)
+	if err != nil {
+		log.Fatalf("Failed to read source template.html from %s: %v", srcPath, err)
+	}
+	err = os.WriteFile(templatePath, srcFile, 0644)
+	if err != nil {
+		log.Fatalf("Failed to write template.html to %s: %v", templatePath, err)
 	}
 
 	iconsSrcDir := "icons"
@@ -486,14 +487,14 @@ func createDefaultConfig() Config {
 				Title:    "Uptime",
 				Command:  "uptime",
 				Interval: 5,
-				Colors:   BlockColors{Background: "#fff", TitleColor: "#333", TitleBackground: "#eee"},
+				Colors:   BlockColors{Background: "#fff", TitleColor: "#333", TitleBackground: "#eee", TitleFontSize: "1.2em", ValueFontSize: "1em"},
 			},
 			{
 				Type:     "single",
 				Title:    "Disk Usage",
 				Command:  "df -h",
 				Interval: 10,
-				Colors:   BlockColors{Background: "#fff", TitleColor: "#333", TitleBackground: "#eee"},
+				Colors:   BlockColors{Background: "#fff", TitleColor: "#333", TitleBackground: "#eee", TitleFontSize: "1.2em", ValueFontSize: "1em"},
 			},
 			{
 				Type:  "group",
@@ -506,7 +507,7 @@ func createDefaultConfig() Config {
 					{Label: "IP Address", Command: "%ip_address"},
 				},
 				Interval: 5,
-				Colors:   BlockColors{Background: "#f9f9f9", TitleColor: "#0056b3", TitleBackground: "#e0f2f7", LabelColor: "#555", LabelBackground: "#f0f0f0", ValueColor: "#222", ValueBackground: "#fff"},
+				Colors:   BlockColors{Background: "#f9f9f9", TitleColor: "#0056b3", TitleBackground: "#e0f2f7", TitleFontSize: "1.2em", LabelColor: "#555", LabelBackground: "#f0f0f0", LabelFontSize: "1em", ValueColor: "#222", ValueBackground: "#fff", ValueFontSize: "1em"},
 			},
 		},
 		LastUpdated: time.Now(),
@@ -535,6 +536,16 @@ func loadConfig() {
 		log.Fatalf("Failed to load config file %s: %v", configFilePath, err)
 	}
 	config = cfg
+
+	// DEBUG: Log the loaded config path and content
+	homeDirDebug, errDebug := os.UserHomeDir()
+	if errDebug != nil {
+		log.Printf("Error getting home directory for debug log: %v", errDebug)
+		return
+	}
+	log.Printf("Loaded config from: %s", filepath.Join(homeDirDebug, ".dazibao", "config.json"))
+	configJSON, _ := json.MarshalIndent(config, "", "  ")
+	log.Printf("Loaded config content:\n%s", string(configJSON))
 }
 
 // ****************************************************************************
@@ -582,7 +593,7 @@ func runBlock(block *Block) {
 		case "single":
 			output, err := executeCommandOrVariable(block.Command)
 			if err != nil {
-				log.Printf("Error executing command for block '%s': %v", block.Title, err)
+				log.Printf("Error executing command for block '%s' (command: %s): %v", block.Title, block.Command, err)
 				block.Output = fmt.Sprintf("Error: %v", err)
 			} else {
 				block.Output = output
@@ -759,5 +770,8 @@ func dataHandler(w http.ResponseWriter, r *http.Request) {
 	defer mutex.Unlock()
 
 	w.Header().Set("Content-Type", "application/json")
+	// DEBUG: Log the config content before sending to frontend
+	configJSON, _ := json.MarshalIndent(config, "", "  ")
+	log.Printf("Sending config to frontend:\n%s", string(configJSON))
 	json.NewEncoder(w).Encode(config)
 }

@@ -254,13 +254,65 @@ func startServer() {
 		go runBlock(block)
 	}
 
-	homeDir, _ := os.UserHomeDir()
-	dazibaoDir := filepath.Join(homeDir, ".dazibao")
-	http.Handle("/", http.FileServer(http.Dir(dazibaoDir)))
+	http.HandleFunc("/", rootHandler)
 	http.HandleFunc("/data", dataHandler)
 	http.HandleFunc("/icons/dazibao.png", iconHandler)
 	log.Printf("dazibao server running on http://localhost:%d. To stop, run: kill %d", config.Port, os.Getpid())
 	log.Fatal(http.ListenAndServe(fmt.Sprintf(":%d", config.Port), nil))
+}
+
+// ****************************************************************************
+// rootHandler()
+// ****************************************************************************
+func rootHandler(w http.ResponseWriter, r *http.Request) {
+	htmlContent, err := generateDynamicHTML()
+	if err != nil {
+		http.Error(w, "Failed to generate page", http.StatusInternalServerError)
+		log.Printf("Error generating HTML for web request: %v", err)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html")
+	w.Write([]byte(htmlContent))
+}
+
+// ****************************************************************************
+// generateDynamicHTML()
+// ****************************************************************************
+func generateDynamicHTML() (string, error) {
+	homeDir, _ := os.UserHomeDir()
+	dazibaoDir := filepath.Join(homeDir, ".dazibao")
+	templatePath := filepath.Join(dazibaoDir, "template.html")
+	tmpl, err := template.ParseFiles(templatePath)
+	if err != nil {
+		return "", fmt.Errorf("failed to parse template file %s: %w", templatePath, err)
+	}
+
+	iconPath := filepath.Join(dazibaoDir, "icons", "dazibao.png")
+	iconData, err := os.ReadFile(iconPath)
+	var iconDataURI string
+	if err != nil {
+		log.Printf("Warning: could not read icon file: %v", err)
+		iconDataURI = ""
+	} else {
+		encodedIcon := base64.StdEncoding.EncodeToString(iconData)
+		iconDataURI = "data:image/png;base64," + encodedIcon
+	}
+
+	templateData := struct {
+		ConfigJSON  template.JS
+		IconDataURI template.URL
+	}{
+		ConfigJSON:  template.JS("null"),
+		IconDataURI: template.URL(iconDataURI),
+	}
+
+	var renderedHTML bytes.Buffer
+	err = tmpl.Execute(&renderedHTML, templateData)
+	if err != nil {
+		return "", fmt.Errorf("failed to execute template: %w", err)
+	}
+
+	return renderedHTML.String(), nil
 }
 
 // ****************************************************************************
@@ -311,43 +363,9 @@ func executeIntervalGeneration(interval int, outputPath string) {
 }
 
 // ****************************************************************************
-// generateAndUpdateStaticHTML()
+// generateHTML()
 // ****************************************************************************
-func generateAndUpdateStaticHTML() (string, error) {
-	cfg, err := getFreshConfig()
-	if err != nil {
-		return "", fmt.Errorf("could not load config: %w", err)
-	}
-	cfg.Version = version
-
-	for _, block := range cfg.Blocks {
-		switch block.Type {
-		case "single":
-			output, err := executeCommandOrVariable(block.Command)
-			if err != nil {
-				block.Output = fmt.Sprintf("Error: %v", err)
-			} else {
-				block.Output = output
-			}
-		case "group":
-			for i := range block.Commands {
-				output, err := executeCommandOrVariable(block.Commands[i].Command)
-				if err != nil {
-					block.Commands[i].Output = fmt.Sprintf("Error: %v", err)
-				} else {
-					block.Commands[i].Output = output
-				}
-			}
-		}
-		block.LastUpdated = time.Now()
-	}
-	cfg.LastUpdated = time.Now()
-
-	err = saveConfigToFile(cfg)
-	if err != nil {
-		return "", fmt.Errorf("could not save updated config: %w", err)
-	}
-
+func generateHTML(cfg Config) (string, error) {
 	homeDir, _ := os.UserHomeDir()
 	dazibaoDir := filepath.Join(homeDir, ".dazibao")
 	templatePath := filepath.Join(dazibaoDir, "template.html")
@@ -387,6 +405,47 @@ func generateAndUpdateStaticHTML() (string, error) {
 	}
 
 	return renderedHTML.String(), nil
+}
+
+// ****************************************************************************
+// generateAndUpdateStaticHTML()
+// ****************************************************************************
+func generateAndUpdateStaticHTML() (string, error) {
+	cfg, err := getFreshConfig()
+	if err != nil {
+		return "", fmt.Errorf("could not load config: %w", err)
+	}
+	cfg.Version = version
+
+	for _, block := range cfg.Blocks {
+		switch block.Type {
+		case "single":
+			output, err := executeCommandOrVariable(block.Command)
+			if err != nil {
+				block.Output = fmt.Sprintf("Error: %v", err)
+			} else {
+				block.Output = output
+			}
+		case "group":
+			for i := range block.Commands {
+				output, err := executeCommandOrVariable(block.Commands[i].Command)
+				if err != nil {
+					block.Commands[i].Output = fmt.Sprintf("Error: %v", err)
+				} else {
+					block.Commands[i].Output = output
+				}
+			}
+		}
+		block.LastUpdated = time.Now()
+	}
+	cfg.LastUpdated = time.Now()
+
+	err = saveConfigToFile(cfg)
+	if err != nil {
+		return "", fmt.Errorf("could not save updated config: %w", err)
+	}
+
+	return generateHTML(cfg)
 }
 
 // ****************************************************************************
@@ -540,8 +599,8 @@ func runBlock(block *Block) {
 			}
 		}
 		block.LastUpdated = time.Now()
+		config.LastUpdated = time.Now()
 		mutex.Unlock()
-		saveConfig()
 	}
 }
 

@@ -28,10 +28,6 @@
                 align-items: flex-start; /* Align text to the left within its wrapper */
                 margin-left: 15px; /* Space between icon and text */
             }
-            .header-text { /* This class is now redundant, but keeping for now */
-                /* flex-grow: 1; */ /* Removed */
-                /* text-align: center; */ /* Removed */
-            }
             #version-text {
                 margin-bottom: 2px; /* Reduced space below version text */
                 margin-top: 0; /* Remove top margin */
@@ -40,43 +36,57 @@
                 margin-top: 0; /* Remove top margin */
             }
             .container {
-                max-width: 800px;
+                display: flex;
+                flex-wrap: wrap;
+                justify-content: center;
+                gap: 10px;
+                padding: 10px;
+                max-width: 1200px;
                 margin: 0 auto;
-                padding: 20px;
+            }
+            .column {
+                flex: 1;
+                min-width: 300px; /* Minimum width for a column */
+                display: flex;
+                flex-direction: column;
+                gap: 10px;
             }
             .block {
                 border-radius: 5px;
-                padding: 20px;
-                margin-bottom: 20px;
-                box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+                padding: 15px;
+                margin-bottom: 0; /* Removed margin-bottom as gap is used now */
+                box-shadow: 0 1px 3px rgba(0,0,0,0.1);
             }
             .block-title {
                 margin-top: 0;
+                margin-bottom: 10px;
                 padding: 5px 10px;
                 border-radius: 3px;
-                font-size: 1.2em;
+                font-size: 1.1em;
                 font-weight: bold;
             }
             .single-command-output {
                 white-space: pre-wrap;
                 word-wrap: break-word;
-                padding: 10px;
+                padding: 8px;
                 border-radius: 3px;
+                font-size: 0.9em;
             }
             .group-command-item {
                 display: flex;
-                margin-bottom: 5px;
+                margin-bottom: 4px;
+                font-size: 0.9em;
             }
             .group-command-label {
-                flex: 0 0 150px; /* Fixed width for label */
-                padding: 5px 10px;
+                flex: 0 0 140px; /* Fixed width for label */
+                padding: 4px 8px;
                 border-radius: 3px;
-                margin-right: 10px;
+                margin-right: 8px;
                 font-weight: bold;
             }
             .group-command-value {
                 flex-grow: 1;
-                padding: 5px 10px;
+                padding: 4px 8px;
                 border-radius: 3px;
                 white-space: pre-wrap;
                 word-wrap: break-word;
@@ -91,26 +101,85 @@
                 <span id="last-updated-text" style="font-size: 0.8em;"></span>
             </div>
         </div>
-        <div class="container">
-            <div id="blocks-container">
-                <!-- Blocks will be loaded here -->
-            </div>
+        <div id="container" class="container">
+            <!-- Columns and blocks will be loaded here -->
         </div>
 
         <script>
-            const blocksContainer = document.getElementById('blocks-container');
             const lastUpdatedText = document.getElementById('last-updated-text');
             const versionText = document.getElementById('version-text');
             const body = document.body;
             const header = document.querySelector('.header');
 
+            function renderBlock(block) {
+                const blockDiv = document.createElement('div');
+                blockDiv.classList.add('block');
+
+                if (block.colors && block.colors.background) {
+                    blockDiv.style.backgroundColor = block.colors.background;
+                } else {
+                    blockDiv.style.backgroundColor = '#fff';
+                }
+
+                const title = document.createElement('h2');
+                title.classList.add('block-title');
+                title.textContent = block.title;
+
+                if (block.colors) {
+                    if (block.colors.title_color) title.style.color = block.colors.title_color;
+                    if (block.colors.title_background) title.style.backgroundColor = block.colors.title_background;
+                    if (block.colors.title_font_size) title.style.fontSize = block.colors.title_font_size;
+                }
+                blockDiv.appendChild(title);
+
+                if (block.type === 'single') {
+                    const pre = document.createElement('pre');
+                    pre.classList.add('single-command-output');
+                    pre.textContent = block.output;
+                    pre.style.backgroundColor = (block.colors && block.colors.value_background) ? block.colors.value_background : '#eee';
+                    if (block.colors) {
+                        if (block.colors.value_color) pre.style.color = block.colors.value_color;
+                        if (block.colors.value_font_size) pre.style.fontSize = block.colors.value_font_size;
+                    }
+                    blockDiv.appendChild(pre);
+                } else if (block.type === 'group') {
+                    block.commands.forEach(command => {
+                        const itemDiv = document.createElement('div');
+                        itemDiv.classList.add('group-command-item');
+
+                        const labelSpan = document.createElement('span');
+                        labelSpan.classList.add('group-command-label');
+                        labelSpan.textContent = command.label;
+                        labelSpan.style.backgroundColor = (block.colors && block.colors.label_background) ? block.colors.label_background : '#f0f0f0';
+                        if (block.colors) {
+                            if (block.colors.label_color) labelSpan.style.color = block.colors.label_color;
+                            if (block.colors.label_font_size) labelSpan.style.fontSize = block.colors.label_font_size;
+                        }
+                        itemDiv.appendChild(labelSpan);
+
+                        const valueSpan = document.createElement('span');
+                        valueSpan.classList.add('group-command-value');
+                        valueSpan.textContent = command.output;
+                        valueSpan.style.backgroundColor = (block.colors && block.colors.value_background) ? block.colors.value_background : '#fff';
+                        if (block.colors) {
+                            if (block.colors.value_color) valueSpan.style.color = block.colors.value_color;
+                            if (block.colors.value_font_size) valueSpan.style.fontSize = block.colors.value_font_size;
+                        }
+                        itemDiv.appendChild(valueSpan);
+
+                        blockDiv.appendChild(itemDiv);
+                    });
+                }
+                return blockDiv;
+            }
+
             function renderData(configData) {
-                if (!configData || !configData.blocks) {
+                if (!configData) {
                     console.error('Invalid or empty config data received.');
                     return;
                 }
                 try {
-                    const blocks = configData.blocks;
+                    const container = document.getElementById('container');
                     const lastUpdated = new Date(configData.last_updated).toLocaleString();
                     const version = configData.version;
                     const globalColors = configData.colors || {};
@@ -118,109 +187,33 @@
                     lastUpdatedText.textContent = `Last updated at ${lastUpdated}`;
                     versionText.textContent = `Dazibao v${version}`;
 
-                    // Apply global page background color
                     if (globalColors.page_background) {
                         body.style.backgroundColor = globalColors.page_background;
-                        header.style.backgroundColor = globalColors.page_background; // Apply to header as well
+                        header.style.backgroundColor = globalColors.page_background;
                     }
 
-                    blocksContainer.innerHTML = ''; // Clear existing content
+                    container.innerHTML = ''; // Clear existing content
 
-                    blocks.forEach(block => {
-                        const blockDiv = document.createElement('div');
-                        blockDiv.classList.add('block');
-
-                        // Apply block-specific background color
-                        if (block.colors && block.colors.background) {
-                            blockDiv.style.backgroundColor = block.colors.background;
-                        } else {
-                            blockDiv.style.backgroundColor = '#fff'; // Default block background
-                        }
-
-                        const title = document.createElement('h2');
-                        title.classList.add('block-title');
-                        title.textContent = block.title;
-
-                        // Apply block title colors
-                        if (block.colors) {
-                            if (block.colors.title_color) {
-                                title.style.color = block.colors.title_color;
-                            }
-                            if (block.colors.title_background) {
-                                title.style.backgroundColor = block.colors.title_background;
-                            }
-                        }
-                        blockDiv.appendChild(title);
-
-                        if (block.type === 'single') {
-                            console.log('Single block colors object:', block.colors);
-                            const pre = document.createElement('pre');
-                            pre.classList.add('single-command-output');
-                            pre.textContent = block.output;
-                            console.log('Single block output:', block.output);
-                            // Apply default background for single command output if not specified
-                            if (!block.colors || !block.colors.value_background) {
-                                pre.style.backgroundColor = '#eee';
-                            } else {
-                                pre.style.backgroundColor = block.colors.value_background;
-                            }
-                            if (block.colors && block.colors.value_color) {
-                                pre.style.color = block.colors.value_color;
-                            }
-                            if (block.colors && block.colors.value_font_size) {
-                                pre.style.fontSize = block.colors.value_font_size;
-                            }
-                            console.log('Single block value_font_size:', block.colors.value_font_size);
-                            blockDiv.appendChild(pre);
-                        } else if (block.type === 'group') {
-                            block.commands.forEach(command => {
-                                const itemDiv = document.createElement('div');
-                                itemDiv.classList.add('group-command-item');
-
-                                const labelSpan = document.createElement('span');
-                                labelSpan.classList.add('group-command-label');
-                                labelSpan.textContent = command.label;
-                                // Apply label colors
-                                if (block.colors) {
-                                    if (block.colors.label_color) {
-                                        labelSpan.style.color = block.colors.label_color;
-                                    }
-                                    if (block.colors.label_background) {
-                                        labelSpan.style.backgroundColor = block.colors.label_background;
-                                    } else {
-                                        labelSpan.style.backgroundColor = '#f0f0f0'; // Default label background
-                                    }
-                                } else {
-                                    labelSpan.style.backgroundColor = '#f0f0f0'; // Default label background
-                                }
-                                itemDiv.appendChild(labelSpan);
-
-                                const valueSpan = document.createElement('span');
-                                valueSpan.classList.add('group-command-value');
-                                valueSpan.textContent = command.output;
-                                // Apply value colors
-                                if (block.colors) {
-                                    if (block.colors.value_color) {
-                                        valueSpan.style.color = block.colors.value_color;
-                                    }
-                                    if (block.colors.value_background) {
-                                        valueSpan.style.backgroundColor = block.colors.value_background;
-                                    } else {
-                                        valueSpan.style.backgroundColor = '#fff'; // Default value background
-                                    }
-                                    if (block.colors.value_font_size) {
-                                        valueSpan.style.fontSize = block.colors.value_font_size;
-                                    }
-                                } else {
-                                    valueSpan.style.backgroundColor = '#fff'; // Default value background
-                                }
-                                itemDiv.appendChild(valueSpan);
-
-                                blockDiv.appendChild(itemDiv);
+                    if (configData.columns && configData.columns.length > 0) {
+                        // New: Render columns
+                        configData.columns.forEach(columnData => {
+                            const columnDiv = document.createElement('div');
+                            columnDiv.classList.add('column');
+                            columnData.blocks.forEach(block => {
+                                columnDiv.appendChild(renderBlock(block));
                             });
-                        }
-                        blocksContainer.appendChild(blockDiv);
-                    });
+                            container.appendChild(columnDiv);
+                        });
+                    } else if (configData.blocks) {
+                        // Fallback for old config format (single column)
+                        const columnDiv = document.createElement('div');
+                        columnDiv.classList.add('column');
+                        configData.blocks.forEach(block => {
+                            columnDiv.appendChild(renderBlock(block));
+                        });
+                        container.appendChild(columnDiv);
+                    }
+
                 } catch (error) {
                     console.error('Error rendering data:', error);
                 }
@@ -248,5 +241,9 @@
                 fetchData();
             }
         </script>
+        <hr>
+        <div style="text-align: center; font-size: small;">
+            rendered by <a href="https://github.com/jplozf/dazibao">Dazibao</a>
+        </div>
     </body>
 </html>

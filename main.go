@@ -65,9 +65,15 @@ type Block struct {
 	Colors      BlockColors `json:"colors,omitempty"`
 }
 
+// Column represents a column of blocks.
+type Column struct {
+	Blocks []*Block `json:"blocks"`
+}
+
 // Config represents the application configuration.
 type Config struct {
-	Blocks      []*Block     `json:"blocks"`
+	Blocks      []*Block     `json:"blocks,omitempty"` // Kept for backward compatibility
+	Columns     []Column     `json:"columns,omitempty"`
 	LastUpdated time.Time    `json:"last_updated"`
 	Port        int          `json:"port"`
 	Version     string       `json:"version"`
@@ -251,7 +257,8 @@ func startServer() {
 		os.Exit(0)
 	}()
 
-	for _, block := range config.Blocks {
+	allBlocks := getAllBlocks(&config)
+	for _, block := range allBlocks {
 		go runBlock(block)
 	}
 
@@ -418,7 +425,8 @@ func generateAndUpdateStaticHTML() (string, error) {
 	}
 	cfg.Version = version
 
-	for _, block := range cfg.Blocks {
+	allBlocks := getAllBlocks(&cfg)
+	for _, block := range allBlocks {
 		switch block.Type {
 		case "single":
 			output, err := executeCommandOrVariable(block.Command)
@@ -481,33 +489,41 @@ func getFreshConfig() (Config, error) {
 // ****************************************************************************
 func createDefaultConfig() Config {
 	return Config{
-		Blocks: []*Block{
-			{
-				Type:     "single",
-				Title:    "Uptime",
-				Command:  "uptime",
-				Interval: 5,
-				Colors:   BlockColors{Background: "#fff", TitleColor: "#333", TitleBackground: "#eee", TitleFontSize: "1.2em", ValueFontSize: "1em"},
-			},
-			{
-				Type:     "single",
-				Title:    "Disk Usage",
-				Command:  "df -h",
-				Interval: 10,
-				Colors:   BlockColors{Background: "#fff", TitleColor: "#333", TitleBackground: "#eee", TitleFontSize: "1.2em", ValueFontSize: "1em"},
-			},
-			{
-				Type:  "group",
-				Title: "System Info",
-				Commands: []Command{
-					{Label: "Hostname", Command: "%hostname"},
-					{Label: "Current Time", Command: "%time"},
-					{Label: "Current Date", Command: "%date"},
-					{Label: "Username", Command: "%username"},
-					{Label: "IP Address", Command: "%ip_address"},
+		Columns: []Column{
+			{ // First Column
+				Blocks: []*Block{
+					{
+						Type:     "single",
+						Title:    "Uptime",
+						Command:  "uptime",
+						Interval: 5,
+						Colors:   BlockColors{Background: "#fff", TitleColor: "#333", TitleBackground: "#eee", TitleFontSize: "1.2em", ValueFontSize: "1em"},
+					},
+					{
+						Type:     "single",
+						Title:    "Disk Usage",
+						Command:  "df -h",
+						Interval: 10,
+						Colors:   BlockColors{Background: "#fff", TitleColor: "#333", TitleBackground: "#eee", TitleFontSize: "1.2em", ValueFontSize: "1em"},
+					},
 				},
-				Interval: 5,
-				Colors:   BlockColors{Background: "#f9f9f9", TitleColor: "#0056b3", TitleBackground: "#e0f2f7", TitleFontSize: "1.2em", LabelColor: "#555", LabelBackground: "#f0f0f0", LabelFontSize: "1em", ValueColor: "#222", ValueBackground: "#fff", ValueFontSize: "1em"},
+			},
+			{ // Second Column
+				Blocks: []*Block{
+					{
+						Type:  "group",
+						Title: "System Info",
+						Commands: []Command{
+							{Label: "Hostname", Command: "%hostname"},
+							{Label: "Current Time", Command: "%time"},
+							{Label: "Current Date", Command: "%date"},
+							{Label: "Username", Command: "%username"},
+							{Label: "IP Address", Command: "%ip_address"},
+						},
+						Interval: 5,
+						Colors:   BlockColors{Background: "#f9f9f9", TitleColor: "#0056b3", TitleBackground: "#e0f2f7", TitleFontSize: "1.2em", LabelColor: "#555", LabelBackground: "#f0f0f0", LabelFontSize: "1em", ValueColor: "#222", ValueBackground: "#fff", ValueFontSize: "1em"},
+					},
+				},
 			},
 		},
 		LastUpdated: time.Now(),
@@ -580,6 +596,21 @@ func saveConfig() {
 	if err := saveConfigToFile(config); err != nil {
 		log.Printf("Error saving config: %v", err)
 	}
+}
+
+// ****************************************************************************
+// getAllBlocks()
+// ****************************************************************************
+func getAllBlocks(cfg *Config) []*Block {
+	var allBlocks []*Block
+	if len(cfg.Columns) > 0 {
+		for _, column := range cfg.Columns {
+			allBlocks = append(allBlocks, column.Blocks...)
+		}
+	} else {
+		allBlocks = append(allBlocks, cfg.Blocks...)
+	}
+	return allBlocks
 }
 
 // ****************************************************************************
@@ -771,7 +802,7 @@ func dataHandler(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	// DEBUG: Log the config content before sending to frontend
-	configJSON, _ := json.MarshalIndent(config, "", "  ")
-	log.Printf("Sending config to frontend:\n%s", string(configJSON))
+	// configJSON, _ := json.MarshalIndent(config, "", "  ")
+	// log.Printf("Sending config to frontend:\n%s", string(configJSON))
 	json.NewEncoder(w).Encode(config)
 }

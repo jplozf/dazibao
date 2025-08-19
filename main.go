@@ -642,8 +642,8 @@ func loadConfig() {
 		return
 	}
 	log.Printf("Loaded config from: %s", filepath.Join(homeDirDebug, ".dazibao", "config.json"))
-	configJSON, _ := json.MarshalIndent(config, "", "  ")
-	log.Printf("Loaded config content:\n%s", string(configJSON))
+	// configJSON, _ := json.MarshalIndent(config, "", "  ")
+	// log.Printf("Loaded config content:\n%s", string(configJSON))
 }
 
 // ****************************************************************************
@@ -749,7 +749,7 @@ func runBlock(block *Block) {
 					block.GaugeValue = val
 				}
 			}
-			log.Printf("Flat Gauge '%s' updated. Value: %.2f", block.Title, block.GaugeValue)
+			// log.Printf("Flat Gauge '%s' updated. Value: %.2f", block.Title, block.GaugeValue)
 		}
 		block.LastUpdated = time.Now()
 		config.LastUpdated = time.Now()

@@ -169,6 +169,131 @@
 
                         blockDiv.appendChild(itemDiv);
                     });
+                } else if (block.type === 'gauge') {
+                    const gaugeContainer = document.createElement('div');
+                    gaugeContainer.style.display = 'flex';
+                    gaugeContainer.style.justifyContent = 'center';
+                    gaugeContainer.style.alignItems = 'center';
+                    gaugeContainer.style.width = `${block.gauge_size || 100}px`;
+                    gaugeContainer.style.height = `${block.gauge_size || 100}px`;
+                    gaugeContainer.style.margin = '10px auto';
+
+                    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+                    const size = block.gauge_size || 100;
+                    const strokeWidth = block.gauge_stroke_width || 10;
+                    const radius = (size / 2) - (strokeWidth / 2);
+                    const circumference = 2 * Math.PI * radius;
+
+                    svg.setAttribute('width', size);
+                    svg.setAttribute('height', size);
+                    svg.setAttribute('viewBox', `0 0 ${size} ${size}`);
+
+                    // Background circle (trail)
+                    const trailCircle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+                    trailCircle.setAttribute('cx', size / 2);
+                    trailCircle.setAttribute('cy', size / 2);
+                    trailCircle.setAttribute('r', radius);
+                    trailCircle.setAttribute('fill', 'transparent');
+                    trailCircle.setAttribute('stroke', block.gauge_trail_color || '#eee');
+                    trailCircle.setAttribute('stroke-width', strokeWidth);
+                    svg.appendChild(trailCircle);
+
+                    // Progress circle (path)
+                    const pathCircle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+                    pathCircle.setAttribute('cx', size / 2);
+                    pathCircle.setAttribute('cy', size / 2);
+                    pathCircle.setAttribute('r', radius);
+                    pathCircle.setAttribute('fill', 'transparent');
+                    pathCircle.setAttribute('stroke', block.gauge_path_color || '#4CAF50');
+                    pathCircle.setAttribute('stroke-width', strokeWidth);
+                    pathCircle.setAttribute('stroke-dasharray', circumference);
+                    pathCircle.setAttribute('stroke-dashoffset', circumference); // Start full
+                    pathCircle.setAttribute('stroke-linecap', 'round');
+                    pathCircle.style.transformOrigin = 'center';
+                    pathCircle.style.transform = 'rotate(-90deg)';
+                    pathCircle.style.transition = 'stroke-dashoffset 0.5s ease-in-out';
+                    svg.appendChild(pathCircle);
+
+                    // Text for value
+                    const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                    text.setAttribute('x', '50%');
+                    text.setAttribute('y', '50%');
+                    text.setAttribute('dominant-baseline', 'middle');
+                    text.setAttribute('text-anchor', 'middle');
+                    text.setAttribute('fill', block.gauge_text_color || '#333');
+                    text.setAttribute('font-size', block.gauge_text_size || '1.5em');
+                    text.setAttribute('font-weight', 'bold');
+                    svg.appendChild(text);
+
+                    // Update gauge function
+                    const updateGauge = (value) => {
+                        const percentage = (value - (block.gauge_min || 0)) / ((block.gauge_max || 100) - (block.gauge_min || 0));
+                        const offset = circumference - (percentage * circumference);
+                        pathCircle.setAttribute('stroke-dashoffset', offset);
+                        text.textContent = `${Math.round(value)}${block.gauge_label || ''}`;
+                    };
+
+                    updateGauge(block.gauge_value); // Initial render
+
+                    gaugeContainer.appendChild(svg);
+                    blockDiv.appendChild(gaugeContainer);
+                } else if (block.type === 'flat_gauge') {
+                    const flatGaugeContainer = document.createElement('div');
+                    flatGaugeContainer.style.width = '100%';
+                    flatGaugeContainer.style.margin = '10px 0';
+                    flatGaugeContainer.style.textAlign = 'center';
+
+                    const width = 200; // Fixed width for the flat gauge SVG
+                    const height = block.flat_gauge_height || 20;
+                    const value = block.gauge_value || 0;
+                    const min = block.gauge_min || 0;
+                    const max = block.gauge_max || 100;
+
+                    const percentage = (value - min) / (max - min);
+                    const fillWidth = width * percentage;
+
+                    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+                    svg.setAttribute('width', width);
+                    svg.setAttribute('height', height);
+                    svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
+                    svg.style.borderRadius = '3px';
+
+                    // Background rectangle (empty part)
+                    const emptyRect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+                    emptyRect.setAttribute('x', '0');
+                    emptyRect.setAttribute('y', '0');
+                    emptyRect.setAttribute('width', width);
+                    emptyRect.setAttribute('height', height);
+                    emptyRect.setAttribute('fill', block.flat_gauge_empty_color || '#eee');
+                    emptyRect.setAttribute('rx', '3'); // Rounded corners
+                    emptyRect.setAttribute('ry', '3');
+                    svg.appendChild(emptyRect);
+
+                    // Fill rectangle
+                    const fillRect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+                    fillRect.setAttribute('x', '0');
+                    fillRect.setAttribute('y', '0');
+                    fillRect.setAttribute('width', fillWidth);
+                    fillRect.setAttribute('height', height);
+                    fillRect.setAttribute('fill', block.flat_gauge_fill_color || '#007bff');
+                    fillRect.setAttribute('rx', '3'); // Rounded corners
+                    fillRect.setAttribute('ry', '3');
+                    fillRect.style.transition = 'width 0.5s ease-in-out';
+                    svg.appendChild(fillRect);
+
+                    // Text for value
+                    const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                    text.setAttribute('x', '50%');
+                    text.setAttribute('y', '50%');
+                    text.setAttribute('dominant-baseline', 'middle');
+                    text.setAttribute('text-anchor', 'middle');
+                    text.setAttribute('fill', block.gauge_text_color || '#333');
+                    text.setAttribute('font-size', block.gauge_text_size || '0.8em');
+                    text.textContent = `${Math.round(value)}${block.gauge_label || ''}`;
+                    svg.appendChild(text);
+
+                    flatGaugeContainer.appendChild(svg);
+                    blockDiv.appendChild(flatGaugeContainer);
                 }
                 return blockDiv;
             }

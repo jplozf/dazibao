@@ -18,6 +18,7 @@ import (
 	"os/signal"
 	"os/user"
 	"path/filepath"
+	"strconv" // Added for parsing gauge values
 	"strings"
 	"sync"
 	"syscall"
@@ -53,16 +54,38 @@ type Command struct {
 	Output  string `json:"output"`
 }
 
-// Block represents a display block, which can be a single command or a group.
+// Block represents a display block, which can be a single command, a group, or a gauge.
 type Block struct {
-	Type        string      `json:"type"` // "single" or "group"
+	Type        string      `json:"type"` // "single", "group", or "gauge"
 	Title       string      `json:"title"`
-	Command     string      `json:"command,omitempty"`  // For type "single"
-	Commands    []Command   `json:"commands,omitempty"` // For type "group"
 	Interval    int         `json:"interval"`
-	Output      string      `json:"output,omitempty"` // For type "single"
 	LastUpdated time.Time   `json:"last_updated"`
 	Colors      BlockColors `json:"colors,omitempty"`
+
+	// Fields for "single" type
+	Command string `json:"command,omitempty"`
+	Output  string `json:"output,omitempty"`
+
+	// Fields for "group" type
+	Commands []Command `json:"commands,omitempty"`
+
+	// Fields for "gauge" type
+	GaugeCommand     string  `json:"gauge_command,omitempty"`
+	GaugeLabel       string  `json:"gauge_label,omitempty"`
+	GaugeMin         float64 `json:"gauge_min,omitempty"`
+	GaugeMax         float64 `json:"gauge_max,omitempty"`
+	GaugeValue       float64 `json:"gauge_value"` // This will hold the parsed value from command output
+	GaugeSize        int     `json:"gauge_size,omitempty"`
+	GaugeStrokeWidth int     `json:"gauge_stroke_width,omitempty"`
+	GaugeTrailColor  string  `json:"gauge_trail_color,omitempty"`
+	GaugePathColor   string  `json:"gauge_path_color,omitempty"`
+	GaugeTextColor   string  `json:"gauge_text_color,omitempty"`
+	GaugeTextSize    string  `json:"gauge_text_size,omitempty"`
+
+	// Fields for "flat_gauge" type
+	FlatGaugeHeight     int    `json:"flat_gauge_height,omitempty"`
+	FlatGaugeFillColor  string `json:"flat_gauge_fill_color,omitempty"`
+	FlatGaugeEmptyColor string `json:"flat_gauge_empty_color,omitempty"`
 }
 
 // Column represents a column of blocks.
@@ -444,6 +467,34 @@ func generateAndUpdateStaticHTML() (string, error) {
 					block.Commands[i].Output = output
 				}
 			}
+		case "gauge":
+			output, err := executeCommandOrVariable(block.GaugeCommand)
+			if err != nil {
+				log.Printf("Error executing command for gauge block '%s' (command: %s): %v", block.Title, block.GaugeCommand, err)
+				block.GaugeValue = 0 // Set to 0 or a default error value
+			} else {
+				val, parseErr := strconv.ParseFloat(strings.TrimSpace(output), 64)
+				if parseErr != nil {
+					log.Printf("Error parsing gauge value for block '%s' (output: %s): %v", block.Title, output, parseErr)
+					block.GaugeValue = 0 // Set to 0 or a default error value
+				} else {
+					block.GaugeValue = val
+				}
+			}
+		case "flat_gauge":
+			output, err := executeCommandOrVariable(block.GaugeCommand)
+			if err != nil {
+				log.Printf("Error executing command for flat gauge block '%s' (command: %s): %v", block.Title, block.GaugeCommand, err)
+				block.GaugeValue = 0 // Set to 0 or a default error value
+			} else {
+				val, parseErr := strconv.ParseFloat(strings.TrimSpace(output), 64)
+				if parseErr != nil {
+					log.Printf("Error parsing flat gauge value for block '%s' (output: %s): %v", block.Title, output, parseErr)
+					block.GaugeValue = 0 // Set to 0 or a default error value
+				} else {
+					block.GaugeValue = val
+				}
+			}
 		}
 		block.LastUpdated = time.Now()
 	}
@@ -522,6 +573,37 @@ func createDefaultConfig() Config {
 						},
 						Interval: 5,
 						Colors:   BlockColors{Background: "#f9f9f9", TitleColor: "#0056b3", TitleBackground: "#e0f2f7", TitleFontSize: "1.2em", LabelColor: "#555", LabelBackground: "#f0f0f0", LabelFontSize: "1em", ValueColor: "#222", ValueBackground: "#fff", ValueFontSize: "1em"},
+					},
+					{
+						Type:             "gauge",
+						Title:            "CPU Usage",
+						GaugeCommand:     "grep 'cpu ' /proc/stat | awk '{usage=($2+$4)*100/($2+$4+$5)} END {print usage}' | cut -d'.' -f1",
+						GaugeLabel:       "%",
+						GaugeMin:         0,
+						GaugeMax:         100,
+						GaugeSize:        150,
+						GaugeStrokeWidth: 15,
+						GaugeTrailColor:  "#eee",
+						GaugePathColor:   "#4CAF50", // Green
+						GaugeTextColor:   "#333",
+						GaugeTextSize:    "2em",
+						Interval:         3,
+						Colors:           BlockColors{Background: "#fff", TitleColor: "#333", TitleBackground: "#eee", TitleFontSize: "1.2em"},
+					},
+					{
+						Type:                "flat_gauge",
+						Title:               "Memory Usage",
+						GaugeCommand:        "free | grep Mem | awk '{print $3*100/$2}' | cut -d'.' -f1",
+						GaugeLabel:          "%",
+						GaugeMin:            0,
+						GaugeMax:            100,
+						FlatGaugeHeight:     20,
+						FlatGaugeFillColor:  "#007bff", // Blue
+						FlatGaugeEmptyColor: "#eee",
+						GaugeTextColor:      "#fff",
+						GaugeTextSize:       "0.8em",
+						Interval:            3,
+						Colors:              BlockColors{Background: "#fff", TitleColor: "#333", TitleBackground: "#eee", TitleFontSize: "1.2em"},
 					},
 				},
 			},
@@ -639,6 +721,35 @@ func runBlock(block *Block) {
 					block.Commands[i].Output = output
 				}
 			}
+		case "gauge":
+			output, err := executeCommandOrVariable(block.GaugeCommand)
+			if err != nil {
+				log.Printf("Error executing command for gauge block '%s' (command: %s): %v", block.Title, block.GaugeCommand, err)
+				block.GaugeValue = 0 // Set to 0 or a default error value
+			} else {
+				val, parseErr := strconv.ParseFloat(strings.TrimSpace(output), 64)
+				if parseErr != nil {
+					log.Printf("Error parsing gauge value for block '%s' (output: %s): %v", block.Title, output, parseErr)
+					block.GaugeValue = 0 // Set to 0 or a default error value
+				} else {
+					block.GaugeValue = val
+				}
+			}
+		case "flat_gauge":
+			output, err := executeCommandOrVariable(block.GaugeCommand)
+			if err != nil {
+				log.Printf("Error executing command for flat gauge block '%s' (command: %s): %v", block.Title, block.GaugeCommand, err)
+				block.GaugeValue = 0 // Set to 0 or a default error value
+			} else {
+				val, parseErr := strconv.ParseFloat(strings.TrimSpace(output), 64)
+				if parseErr != nil {
+					log.Printf("Error parsing flat gauge value for block '%s' (output: %s): %v", block.Title, output, parseErr)
+					block.GaugeValue = 0 // Set to 0 or a default error value
+				} else {
+					block.GaugeValue = val
+				}
+			}
+			log.Printf("Flat Gauge '%s' updated. Value: %.2f", block.Title, block.GaugeValue)
 		}
 		block.LastUpdated = time.Now()
 		config.LastUpdated = time.Now()
